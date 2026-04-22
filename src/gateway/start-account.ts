@@ -5,6 +5,8 @@ import type { Logger } from "../connection/logger.js";
 import { consoleLogger } from "../connection/logger.js";
 import type { ResolvedEmailAccount } from "./resolved-account.js";
 import { dispatchInbound, type ChannelRuntimeSurface } from "./inbound-dispatcher.js";
+import type { MaybeSecret, SecretResolver } from "../secrets/types.js";
+import { isSecretRef } from "../secrets/types.js";
 
 export interface StartAccountContext {
   cfg: unknown;
@@ -13,6 +15,7 @@ export interface StartAccountContext {
   channelRuntime?: ChannelRuntimeSurface | undefined;
   abortSignal: AbortSignal;
   logger?: Logger;
+  secretResolver: SecretResolver;
 }
 
 /**
@@ -44,13 +47,26 @@ export async function startEmailAccount(ctx: StartAccountContext): Promise<Accou
     logger.warn("channelRuntime unavailable — running in inbound-log-only mode", { accountId });
   }
 
+  let imapPassword: string;
+  let smtpPassword: string;
+  try {
+    imapPassword = await resolveSecretValue(account.imap.password, ctx.secretResolver);
+    smtpPassword = await resolveSecretValue(account.smtp.password, ctx.secretResolver);
+  } catch (err) {
+    logger.error("secret resolution failed", {
+      accountId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
+  }
+
   const smtp = new SmtpSender({
     accountId,
     host: account.smtp.host,
     port: account.smtp.port,
     secure: account.smtp.secure,
     user: account.smtp.user,
-    password: account.smtp.password,
+    password: smtpPassword,
     from: account.smtp.from,
     logger,
   });
@@ -105,7 +121,7 @@ export async function startEmailAccount(ctx: StartAccountContext): Promise<Accou
     port: account.imap.port,
     secure: account.imap.secure,
     user: account.imap.user,
-    password: account.imap.password,
+    password: imapPassword,
     mailbox: account.imap.mailbox,
   });
 
@@ -125,4 +141,14 @@ export async function startEmailAccount(ctx: StartAccountContext): Promise<Accou
   }
 
   return { stop };
+}
+
+async function resolveSecretValue(
+  value: MaybeSecret,
+  resolver: SecretResolver,
+): Promise<string> {
+  if (isSecretRef(value)) {
+    return resolver.resolve(value.ref);
+  }
+  return value;
 }

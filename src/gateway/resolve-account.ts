@@ -1,4 +1,6 @@
 import type { ResolvedEmailAccount } from "./resolved-account.js";
+import { parseMaybeSecret } from "../secrets/parse.js";
+import { isSecretRef, type MaybeSecret } from "../secrets/types.js";
 
 /**
  * Parses a raw per-account config blob (from openclaw YAML) into a
@@ -30,7 +32,7 @@ export function resolveEmailAccountFromConfig(
     port: requirePort(imapRaw.port, `imap.port for account ${accountId}`),
     secure: imapRaw.secure === true,
     user: requireString(imapRaw.user, `imap.user for account ${accountId}`),
-    password: requireString(imapRaw.password, `imap.password for account ${accountId}`),
+    password: requireMaybeSecret(imapRaw.password, `imap.password for account ${accountId}`),
     mailbox: typeof imapRaw.mailbox === "string" ? imapRaw.mailbox : "INBOX",
   };
 
@@ -43,13 +45,13 @@ export function resolveEmailAccountFromConfig(
     port: requirePort(smtpRaw.port, `smtp.port for account ${accountId}`),
     secure: smtpRaw.secure === true,
     user: requireString(smtpRaw.user, `smtp.user for account ${accountId}`),
-    password: requireString(smtpRaw.password, `smtp.password for account ${accountId}`),
+    password: requireMaybeSecret(smtpRaw.password, `smtp.password for account ${accountId}`),
     from: requireString(smtpRaw.from, `smtp.from for account ${accountId}`),
   };
 
   const configured =
-    imap.host.length > 0 && imap.user.length > 0 && imap.password.length > 0 &&
-    smtp.host.length > 0 && smtp.from.length > 0;
+    imap.host.length > 0 && imap.user.length > 0 && !isEmptyLiteral(imap.password) &&
+    smtp.host.length > 0 && smtp.from.length > 0 && !isEmptyLiteral(smtp.password);
 
   return { accountId, enabled, configured, imap, smtp };
 }
@@ -70,4 +72,15 @@ function requirePort(v: unknown, what: string): number {
     throw new Error(`imap plugin: ${what} must be an integer between 1 and 65535`);
   }
   return v;
+}
+
+function requireMaybeSecret(v: unknown, what: string): MaybeSecret {
+  if (typeof v !== "string" || v.length === 0) {
+    throw new Error(`imap plugin: ${what} must be a non-empty string (literal or "!secret <ref>")`);
+  }
+  return parseMaybeSecret(v);
+}
+
+function isEmptyLiteral(v: MaybeSecret): boolean {
+  return !isSecretRef(v) && v.length === 0;
 }

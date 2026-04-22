@@ -2,6 +2,7 @@ import { startEmailAccount, type AccountHandle } from "./gateway/start-account.j
 import { resolveEmailAccountFromConfig } from "./gateway/resolve-account.js";
 import type { ResolvedEmailAccount } from "./gateway/resolved-account.js";
 import type { ChannelRuntimeSurface } from "./gateway/inbound-dispatcher.js";
+import { buildSecretResolverFromConfig } from "./secrets/build-resolver.js";
 
 /**
  * Minimal shape of the ChannelGatewayContext we actually need. The real type
@@ -44,12 +45,14 @@ export const imapPlugin = {
         await existing.stop();
         accountHandles.delete(ctx.accountId);
       }
+      const secretResolver = buildSecretResolverFromConfig(ctx.cfg);
       const handle = await startEmailAccount({
         cfg: ctx.cfg,
         accountId: ctx.accountId,
         account: ctx.account,
         channelRuntime: ctx.channelRuntime,
         abortSignal: ctx.abortSignal,
+        secretResolver,
       });
       accountHandles.set(ctx.accountId, handle);
     },

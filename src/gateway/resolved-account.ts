@@ -1,9 +1,11 @@
+import type { MaybeSecret } from "../secrets/types.js";
+
 export interface ResolvedImapConfig {
   host: string;
   port: number;
   secure: boolean;
   user: string;
-  password: string;
+  password: MaybeSecret;
   mailbox: string;
 }
 
@@ -12,7 +14,7 @@ export interface ResolvedSmtpConfig {
   port: number;
   secure: boolean;
   user: string;
-  password: string;
+  password: MaybeSecret;
   from: string;
 }
 

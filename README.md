@@ -53,11 +53,13 @@ One `ImapConnection` per account, one `SmtpSender` transport per account. Both l
 
 ## Configuration
 
-Per-account blob under `channels.imap.accounts.<accountId>`:
-
 ```yaml
 channels:
   imap:
+    secrets:
+      backend: pass          # or "env"; default is "pass"
+      # binary: /usr/bin/pass
+      # timeoutMs: 5000
     accounts:
       amilo:
         enabled: true
@@ -66,18 +68,27 @@ channels:
           port: 993
           secure: true
           user: amilo@example.com
-          password: !secret IMAP_PASSWORD_AMILO   # Phase 4
+          password: "!secret imap/amilo"
           mailbox: INBOX
         smtp:
           host: mail.example.com
           port: 465
           secure: true
           user: amilo@example.com
-          password: !secret SMTP_PASSWORD_AMILO   # Phase 4
+          password: "!secret smtp/amilo"
           from: "Amilo <amilo@example.com>"
 ```
 
 Multi-account is first-class: add another key under `accounts:` and the plugin spins up an independent IDLE worker + SMTP transport for it.
+
+### Secrets
+
+Any string under an account's `imap.password` or `smtp.password` that starts with `!secret ` is treated as a deferred reference. The literal part after the prefix is the `ref` passed to the resolver:
+
+- **`pass` backend** (default): runs `pass show <ref>` via `spawn` (no shell). `ref` is regex-validated to `[A-Za-z0-9_][A-Za-z0-9/_.-]*`. The binary gets a 5 s hard timeout so a hanging gpg-agent does not block account startup forever. The resolved plaintext is scoped to the `startAccount` closure — it never enters the persisted `ResolvedEmailAccount` and is never logged.
+- **`env` backend** (fallback / test): looks `ref` up in `process.env`. Env-name format is `^[A-Z_][A-Z0-9_]*$`. Not recommended for production: plaintext sits in `/proc/<pid>/environ` and in any child process launched without env scrubbing.
+
+Literal passwords (strings without the `!secret ` prefix) are still accepted — useful for local development, a plain-bad idea for anything else.
 
 ## Status / roadmap
 
@@ -88,7 +99,8 @@ Multi-account is first-class: add another key under `accounts:` and the plugin s
 - [x] Phase 2.3: Mail parser → normalized `InboundMessage`
 - [x] Phase 2.4 + 3: Inbound dispatch wired to OpenClaw runtime + SMTP outbound with reply-threading
 - [x] Phase 2.5: Plugin manifest + README aligned with actual config shape
-- [ ] Phase 4: Secrets management (keyring / `pass`) + sandbox test against a real server (Dovecot)
+- [x] Phase 4.1: Secrets resolver (`!secret` → `pass`/`env`) with hardening
+- [ ] Phase 4.2: Sandbox test against a real server (Dovecot)
 - [ ] Phase 5: v0.1.0 release + community-plugin PR at `openclaw/openclaw`
 
 ## Development

@@ -10,6 +10,15 @@
     "type": "object",
     "additionalProperties": false,
     "properties": {
+      "secrets": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "backend": { "type": "string", "enum": ["pass", "env"], "default": "pass" },
+          "binary": { "type": "string" },
+          "timeoutMs": { "type": "integer", "minimum": 100 }
+        }
+      },
       "accounts": {
         "type": "object",
         "additionalProperties": {
