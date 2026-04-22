@@ -1,6 +1,6 @@
 import { InboundAccountManager } from "../connection/inbound-account-manager.js";
 import { parseFetchedMessage } from "../parser/parse-message.js";
-import { SmtpSender } from "../smtp/smtp-sender.js";
+import { SmtpSender, extractBareAddress } from "../smtp/smtp-sender.js";
 import type { Logger } from "../connection/logger.js";
 import { consoleLogger } from "../connection/logger.js";
 import type { ResolvedEmailAccount } from "./resolved-account.js";
@@ -23,6 +23,63 @@ export interface StartAccountContext {
    * IMAP + parser + threading path before arming outbound delivery.
    */
   dryRun?: boolean;
+  /**
+   * Gateway-provided runtime-state patcher. When present, connection lifecycle
+   * and inbound events are mirrored into the shared account runtime store so
+   * the gateway status adapter can surface `connected`, `lastConnectedAt`,
+   * `lastDisconnect`, and `lastInboundAt` in `channels.status` responses.
+   */
+  setStatus?: (patch: {
+    connected?: boolean;
+    lastConnectedAt?: number | null;
+    lastDisconnect?: { at: number; reason: string } | null;
+    lastInboundAt?: number | null;
+    lastOutboundAt?: number | null;
+    lastError?: string | null;
+  }) => void;
+}
+
+/** Own From-address extracted once per account, lower-cased for comparison. */
+function selfAddress(account: ResolvedEmailAccount): string {
+  return extractBareAddress(account.smtp.from);
+}
+
+/**
+ * True when an inbound message is our own SMTP reply bouncing back into the
+ * same mailbox (mailer routes amilo@… → amilo@…). Two independent signals:
+ *   1. From-address equals our SMTP from-address.
+ *   2. Message-ID (or a threading reference) is in our sent-id cache.
+ * Either is sufficient; both fire in practice.
+ */
+function isSelfSend(
+  parsed: {
+    from: { address: string } | undefined;
+    messageId: string | undefined;
+    inReplyTo: string | undefined;
+    references: readonly string[];
+  },
+  account: ResolvedEmailAccount,
+  smtp: SmtpSender | null,
+): { self: boolean; reason: string } {
+  const fromAddr = parsed.from?.address?.toLowerCase();
+  const own = selfAddress(account);
+  if (fromAddr && own && fromAddr === own) {
+    return { self: true, reason: "from-address matches SMTP from" };
+  }
+  if (smtp) {
+    if (smtp.hasSentRecently(parsed.messageId)) {
+      return { self: true, reason: "message-id in sent cache" };
+    }
+    if (smtp.hasSentRecently(parsed.inReplyTo)) {
+      return { self: true, reason: "in-reply-to in sent cache" };
+    }
+    for (const ref of parsed.references) {
+      if (smtp.hasSentRecently(ref)) {
+        return { self: true, reason: "reference in sent cache" };
+      }
+    }
+  }
+  return { self: false, reason: "" };
 }
 
 /**
@@ -93,6 +150,22 @@ export async function startEmailAccount(ctx: StartAccountContext): Promise<Accou
   }
 
   const manager = new InboundAccountManager({ logger });
+  const setStatus = ctx.setStatus;
+
+  manager.on("connected", () => {
+    setStatus?.({
+      connected: true,
+      lastConnectedAt: Date.now(),
+      lastError: null,
+    });
+  });
+
+  manager.on("disconnected", (_id, reason) => {
+    setStatus?.({
+      connected: false,
+      lastDisconnect: { at: Date.now(), reason },
+    });
+  });
 
   manager.on("message", (emittedAccountId, raw) => {
     void (async () => {
@@ -101,6 +174,18 @@ export async function startEmailAccount(ctx: StartAccountContext): Promise<Accou
           accountId: emittedAccountId,
           mailbox: account.imap.mailbox,
         });
+        const loopCheck = isSelfSend(parsed, account, smtp);
+        if (loopCheck.self) {
+          logger.info("inbound skipped: self-send loop prevented", {
+            accountId: emittedAccountId,
+            uid: parsed.source.uid,
+            messageId: parsed.messageId,
+            from: parsed.from?.address,
+            reason: loopCheck.reason,
+          });
+          return;
+        }
+        setStatus?.({ lastInboundAt: Date.now() });
         if (dryRun) {
           logger.info("DRY RUN inbound (no dispatch, no send)", {
             accountId: emittedAccountId,
@@ -139,6 +224,7 @@ export async function startEmailAccount(ctx: StartAccountContext): Promise<Accou
           inbound: parsed,
           smtp,
           logger,
+          onOutbound: () => setStatus?.({ lastOutboundAt: Date.now() }),
         });
       } catch (err) {
         logger.error("inbound dispatch failed", {

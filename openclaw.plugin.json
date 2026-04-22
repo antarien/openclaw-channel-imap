@@ -9,51 +9,219 @@
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
-    "properties": {
-      "secrets": {
+    "properties": {}
+  },
+  "channelConfigs": {
+    "imap": {
+      "label": "Email",
+      "description": "IMAP/SMTP mailbox — IDLE push, reply threading, pass-friendly secrets.",
+      "schema": {
         "type": "object",
-        "additionalProperties": false,
         "properties": {
-          "backend": { "type": "string", "enum": ["pass", "env"], "default": "pass" },
-          "binary": { "type": "string" },
-          "timeoutMs": { "type": "integer", "minimum": 100 }
-        }
-      },
-      "accounts": {
-        "type": "object",
-        "additionalProperties": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "enabled": { "type": "boolean", "default": true },
-            "imap": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "host": { "type": "string" },
-                "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
-                "secure": { "type": "boolean" },
-                "user": { "type": "string" },
-                "password": { "type": "string" },
-                "mailbox": { "type": "string", "default": "INBOX" }
-              },
-              "required": ["host", "port", "user", "password"]
-            },
-            "smtp": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "host": { "type": "string" },
-                "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
-                "secure": { "type": "boolean" },
-                "user": { "type": "string" },
-                "password": { "type": "string" },
-                "from": { "type": "string" }
-              },
-              "required": ["host", "port", "user", "password", "from"]
-            }
+          "dryRun": {
+            "default": false,
+            "description": "Receive IMAP only; skip SMTP transport and reply dispatch",
+            "type": "boolean"
           },
-          "required": ["imap", "smtp"]
+          "secrets": {
+            "type": "object",
+            "properties": {
+              "backend": {
+                "default": "pass",
+                "description": "Secret resolver backend",
+                "type": "string",
+                "enum": [
+                  "pass",
+                  "env"
+                ]
+              },
+              "binary": {
+                "description": "Override path to pass binary",
+                "type": "string"
+              },
+              "timeoutMs": {
+                "description": "Secret resolve timeout in ms",
+                "type": "integer",
+                "minimum": 100,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "backend"
+            ],
+            "additionalProperties": false
+          },
+          "accounts": {
+            "description": "IMAP/SMTP accounts keyed by account id",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "default": true,
+                  "description": "Run this account",
+                  "type": "boolean"
+                },
+                "imap": {
+                  "type": "object",
+                  "properties": {
+                    "host": {
+                      "type": "string",
+                      "description": "IMAP server hostname"
+                    },
+                    "port": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 65535,
+                      "description": "IMAP server port (993 for TLS)"
+                    },
+                    "secure": {
+                      "description": "Use implicit TLS",
+                      "type": "boolean"
+                    },
+                    "user": {
+                      "type": "string",
+                      "description": "IMAP username"
+                    },
+                    "password": {
+                      "type": "string",
+                      "description": "IMAP password or !secret reference"
+                    },
+                    "mailbox": {
+                      "default": "INBOX",
+                      "description": "Mailbox to watch",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "host",
+                    "port",
+                    "user",
+                    "password",
+                    "mailbox"
+                  ],
+                  "additionalProperties": false
+                },
+                "smtp": {
+                  "type": "object",
+                  "properties": {
+                    "host": {
+                      "type": "string",
+                      "description": "SMTP server hostname"
+                    },
+                    "port": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 65535,
+                      "description": "SMTP server port (587 STARTTLS, 465 implicit TLS)"
+                    },
+                    "secure": {
+                      "description": "Use implicit TLS",
+                      "type": "boolean"
+                    },
+                    "user": {
+                      "type": "string",
+                      "description": "SMTP username"
+                    },
+                    "password": {
+                      "type": "string",
+                      "description": "SMTP password or !secret reference"
+                    },
+                    "from": {
+                      "type": "string",
+                      "description": "Default From header (e.g. Name <user@example.com>)"
+                    }
+                  },
+                  "required": [
+                    "host",
+                    "port",
+                    "user",
+                    "password",
+                    "from"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "enabled",
+                "imap",
+                "smtp"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "dryRun"
+        ],
+        "additionalProperties": false
+      },
+      "uiHints": {
+        "dryRun": {
+          "label": "Dry run",
+          "help": "Receive IMAP only; skip SMTP transport and reply dispatch."
+        },
+        "secrets.backend": {
+          "label": "Secrets backend",
+          "help": "Where `!secret …` references are resolved."
+        },
+        "secrets.binary": {
+          "label": "Pass binary",
+          "help": "Path override for the pass CLI.",
+          "advanced": true
+        },
+        "secrets.timeoutMs": {
+          "label": "Resolve timeout (ms)",
+          "advanced": true
+        },
+        "accounts.*.enabled": {
+          "label": "Enabled"
+        },
+        "accounts.*.imap.host": {
+          "label": "IMAP host",
+          "placeholder": "mail.example.com"
+        },
+        "accounts.*.imap.port": {
+          "label": "IMAP port",
+          "placeholder": "993"
+        },
+        "accounts.*.imap.secure": {
+          "label": "IMAP TLS"
+        },
+        "accounts.*.imap.user": {
+          "label": "IMAP user"
+        },
+        "accounts.*.imap.password": {
+          "label": "IMAP password",
+          "sensitive": true
+        },
+        "accounts.*.imap.mailbox": {
+          "label": "Mailbox"
+        },
+        "accounts.*.smtp.host": {
+          "label": "SMTP host",
+          "placeholder": "mail.example.com"
+        },
+        "accounts.*.smtp.port": {
+          "label": "SMTP port",
+          "placeholder": "587"
+        },
+        "accounts.*.smtp.secure": {
+          "label": "SMTP TLS"
+        },
+        "accounts.*.smtp.user": {
+          "label": "SMTP user"
+        },
+        "accounts.*.smtp.password": {
+          "label": "SMTP password",
+          "sensitive": true
+        },
+        "accounts.*.smtp.from": {
+          "label": "From header",
+          "placeholder": "Name <user@example.com>"
         }
       }
     }

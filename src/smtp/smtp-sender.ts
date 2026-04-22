@@ -25,15 +25,23 @@ export interface SendMailParams {
   references?: readonly string[];
 }
 
+const SENT_ID_MAX = 256;
+const SENT_ID_TTL_MS = 15 * 60 * 1000;
+
 /**
  * SMTP outbound sender. One long-lived nodemailer transport per account.
  * Reply-threading is built from `inReplyTo` + `references` (RFC 5322 / 2822).
+ *
+ * Tracks recently-sent Message-IDs so the inbound path can detect our own
+ * replies landing back in the mailbox (needed when the SMTP `from` routes back
+ * to the same mailbox we monitor via IMAP).
  */
 export class SmtpSender {
   private readonly transporter: Transporter;
   private readonly from: string;
   private readonly logger: Logger;
   private readonly accountId: string;
+  private readonly sentIds = new Map<string, number>();
 
   constructor(opts: SmtpSenderOptions) {
     this.accountId = opts.accountId;
@@ -67,6 +75,7 @@ export class SmtpSender {
       ...(references ? { references } : {}),
     });
 
+    this.rememberSentId(info.messageId);
     this.logger.info("smtp sent", {
       accountId: this.accountId,
       to: params.to,
@@ -75,12 +84,56 @@ export class SmtpSender {
     return info.messageId;
   }
 
+  /**
+   * Returns true iff `id` was produced by this sender within the last
+   * SENT_ID_TTL_MS window. Used by the inbound path to drop our own
+   * self-delivered replies before they reach `dispatchInbound`.
+   */
+  hasSentRecently(id: string | undefined | null): boolean {
+    if (!id) return false;
+    this.pruneSentIds();
+    return this.sentIds.has(normalizeMessageId(id));
+  }
+
   close(): void {
     this.transporter.close();
+  }
+
+  private rememberSentId(id: string | undefined): void {
+    const key = normalizeMessageId(id);
+    if (!key) return;
+    this.pruneSentIds();
+    this.sentIds.set(key, Date.now());
+    while (this.sentIds.size > SENT_ID_MAX) {
+      const oldest = this.sentIds.keys().next().value;
+      if (!oldest) break;
+      this.sentIds.delete(oldest);
+    }
+  }
+
+  private pruneSentIds(): void {
+    const cutoff = Date.now() - SENT_ID_TTL_MS;
+    for (const [id, at] of this.sentIds) {
+      if (at < cutoff) this.sentIds.delete(id);
+    }
   }
 }
 
 function angleWrap(id: string): string {
   const s = id.trim();
   return s.startsWith("<") ? s : `<${s}>`;
+}
+
+export function normalizeMessageId(id: string | undefined | null): string {
+  if (!id) return "";
+  return id.trim().replace(/^<|>$/g, "").toLowerCase();
+}
+
+/**
+ * Extract the bare `user@host` from a From-header value like
+ * `"Name" <user@host>` or `user@host`. Returns lower-cased for comparison.
+ */
+export function extractBareAddress(headerValue: string): string {
+  const m = /<([^>]+)>/.exec(headerValue);
+  return (m?.[1] ?? headerValue).trim().toLowerCase();
 }

@@ -55,6 +55,8 @@ export interface DispatchInboundParams {
   inbound: InboundMessage;
   smtp: SmtpSender;
   logger: Logger;
+  /** Optional hook to update `lastOutboundAt` after each successful SMTP send. */
+  onOutbound?: () => void;
 }
 
 const CHANNEL_ID = "imap";
@@ -69,7 +71,7 @@ const CHANNEL_ID = "imap";
  * in the deliver closure so SMTP threading is correct without additional state.
  */
 export async function dispatchInbound(params: DispatchInboundParams): Promise<void> {
-  const { cfg, accountId, channelRuntime, inbound, smtp, logger } = params;
+  const { cfg, accountId, channelRuntime, inbound, smtp, logger, onOutbound } = params;
 
   const fromAddress = inbound.from?.address;
   if (!fromAddress) {
@@ -134,6 +136,7 @@ export async function dispatchInbound(params: DispatchInboundParams): Promise<vo
             ...(inbound.messageId ? { inReplyTo: inbound.messageId } : {}),
             ...(replyReferences.length ? { references: replyReferences } : {}),
           });
+          onOutbound?.();
         } catch (err) {
           logger.error("smtp deliver failed", {
             accountId,

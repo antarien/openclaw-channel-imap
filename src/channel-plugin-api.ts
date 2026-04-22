@@ -9,12 +9,16 @@ import { buildSecretResolverFromConfig } from "./secrets/build-resolver.js";
  * lives in openclaw/plugin-sdk/src/channels/plugins/types.adapters.d.ts and
  * includes a lot of fields we don't touch.
  */
+type StatusPatch = Partial<RuntimeState>;
+
 interface GatewayContext {
   cfg: unknown;
   accountId: string;
   account: ResolvedEmailAccount;
   abortSignal: AbortSignal;
   channelRuntime?: ChannelRuntimeSurface;
+  getStatus?: () => RuntimeState;
+  setStatus?: (patch: StatusPatch) => void;
 }
 
 const accountHandles = new Map<string, AccountHandle>();
@@ -32,11 +36,34 @@ export const imapPlugin = {
     attachments: true,
   },
   config: {
-    resolveAccount: (cfg: unknown, accountId?: string): ResolvedEmailAccount => {
-      const id = accountId ?? "default";
+    listAccountIds: (cfg: unknown): string[] => {
+      if (!isRecord(cfg)) return [];
+      const channels = cfg.channels;
+      if (!isRecord(channels)) return [];
+      const imap = channels.imap;
+      if (!isRecord(imap)) return [];
+      const accounts = imap.accounts;
+      if (!isRecord(accounts)) return [];
+      return Object.keys(accounts);
+    },
+    resolveAccount: (cfg: unknown, accountId?: string | null): ResolvedEmailAccount => {
+      const id = accountId && accountId.length > 0 ? accountId : "default";
       const raw = readAccountBlob(cfg, id);
       return resolveEmailAccountFromConfig(id, raw);
     },
+    defaultAccountId: (cfg: unknown): string => {
+      if (!isRecord(cfg)) return "default";
+      const channels = cfg.channels;
+      if (!isRecord(channels)) return "default";
+      const imap = channels.imap;
+      if (!isRecord(imap)) return "default";
+      const accounts = imap.accounts;
+      if (!isRecord(accounts)) return "default";
+      const first = Object.keys(accounts)[0];
+      return first ?? "default";
+    },
+    isEnabled: (account: ResolvedEmailAccount): boolean => account.enabled,
+    isConfigured: (account: ResolvedEmailAccount): boolean => account.configured,
   },
   gateway: {
     startAccount: async (ctx: GatewayContext): Promise<void> => {
@@ -55,8 +82,17 @@ export const imapPlugin = {
         abortSignal: ctx.abortSignal,
         secretResolver,
         dryRun,
+        ...(ctx.setStatus ? { setStatus: ctx.setStatus } : {}),
       });
       accountHandles.set(ctx.accountId, handle);
+      // The gateway treats a resolved startAccount as "task ended" and schedules
+      // an auto-restart, which would tear down the long-lived IMAP IDLE worker.
+      // Block here until abort; the inner ImapConnection runs its own reconnect
+      // loop with exponential backoff and survives transient network drops.
+      if (ctx.abortSignal.aborted) return;
+      await new Promise<void>((resolve) => {
+        ctx.abortSignal.addEventListener("abort", () => resolve(), { once: true });
+      });
     },
     stopAccount: async (ctx: GatewayContext): Promise<void> => {
       const handle = accountHandles.get(ctx.accountId);
@@ -65,7 +101,93 @@ export const imapPlugin = {
       await handle.stop();
     },
   },
+  status: {
+    buildAccountSnapshot: (params: StatusSnapshotParams): AccountStatusSnapshot => {
+      const { account, runtime, probe } = params;
+      return {
+        accountId: account.accountId,
+        enabled: account.enabled,
+        configured: account.configured,
+        running: runtime?.running ?? false,
+        lastStartAt: runtime?.lastStartAt ?? null,
+        lastStopAt: runtime?.lastStopAt ?? null,
+        lastError: runtime?.lastError ?? null,
+        lastInboundAt: runtime?.lastInboundAt ?? null,
+        lastOutboundAt: runtime?.lastOutboundAt ?? null,
+        ...(typeof runtime?.connected === "boolean"
+          ? { connected: runtime.connected }
+          : {}),
+        ...(typeof runtime?.lastConnectedAt === "number"
+          ? { lastConnectedAt: runtime.lastConnectedAt }
+          : {}),
+        ...(runtime?.lastDisconnect ? { lastDisconnect: runtime.lastDisconnect } : {}),
+        ...(typeof runtime?.reconnectAttempts === "number"
+          ? { reconnectAttempts: runtime.reconnectAttempts }
+          : {}),
+        ...(typeof runtime?.restartPending === "boolean"
+          ? { restartPending: runtime.restartPending }
+          : {}),
+        ...(probe !== undefined ? { probe } : {}),
+      };
+    },
+    buildChannelSummary: (params: { snapshot: AccountStatusSnapshot }) => ({
+      configured: params.snapshot.configured ?? false,
+      running: params.snapshot.running ?? false,
+      lastStartAt: params.snapshot.lastStartAt ?? null,
+      lastStopAt: params.snapshot.lastStopAt ?? null,
+      lastError: params.snapshot.lastError ?? null,
+      ...(typeof params.snapshot.connected === "boolean"
+        ? { connected: params.snapshot.connected }
+        : {}),
+      ...(typeof params.snapshot.lastConnectedAt === "number"
+        ? { lastConnectedAt: params.snapshot.lastConnectedAt }
+        : {}),
+      ...(params.snapshot.lastInboundAt != null
+        ? { lastInboundAt: params.snapshot.lastInboundAt }
+        : {}),
+    }),
+  },
 } as const;
+
+interface RuntimeState {
+  running?: boolean;
+  lastStartAt?: number | null;
+  lastStopAt?: number | null;
+  lastError?: string | null;
+  lastInboundAt?: number | null;
+  lastOutboundAt?: number | null;
+  reconnectAttempts?: number;
+  restartPending?: boolean;
+  connected?: boolean;
+  lastConnectedAt?: number | null;
+  lastDisconnect?: { at: number; reason: string } | null;
+}
+
+interface StatusSnapshotParams {
+  account: ResolvedEmailAccount;
+  cfg: unknown;
+  runtime?: RuntimeState;
+  probe?: unknown;
+  audit?: unknown;
+}
+
+interface AccountStatusSnapshot {
+  accountId: string;
+  enabled: boolean;
+  configured: boolean;
+  running: boolean;
+  lastStartAt: number | null;
+  lastStopAt: number | null;
+  lastError: string | null;
+  lastInboundAt: number | null;
+  lastOutboundAt: number | null;
+  connected?: boolean;
+  lastConnectedAt?: number;
+  lastDisconnect?: { at: number; reason: string };
+  reconnectAttempts?: number;
+  restartPending?: boolean;
+  probe?: unknown;
+}
 
 function readAccountBlob(cfg: unknown, accountId: string): unknown {
   if (!isRecord(cfg)) return {};
