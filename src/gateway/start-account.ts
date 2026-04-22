@@ -16,6 +16,13 @@ export interface StartAccountContext {
   abortSignal: AbortSignal;
   logger?: Logger;
   secretResolver: SecretResolver;
+  /**
+   * When true, the account receives mail and parses it, but no SMTP transport
+   * is opened and no dispatchReplyWithBufferedBlockDispatcher is ever called.
+   * Inbound mail is logged as structured metadata so operators can verify the
+   * IMAP + parser + threading path before arming outbound delivery.
+   */
+  dryRun?: boolean;
 }
 
 /**
@@ -43,33 +50,47 @@ export async function startEmailAccount(ctx: StartAccountContext): Promise<Accou
     return { stop: async () => {} };
   }
 
-  if (!ctx.channelRuntime) {
+  const dryRun = ctx.dryRun === true;
+  if (dryRun) {
+    logger.warn("DRY RUN mode — no SMTP transport, no dispatchReply", { accountId });
+  } else if (!ctx.channelRuntime) {
     logger.warn("channelRuntime unavailable — running in inbound-log-only mode", { accountId });
   }
 
   let imapPassword: string;
-  let smtpPassword: string;
   try {
     imapPassword = await resolveSecretValue(account.imap.password, ctx.secretResolver);
-    smtpPassword = await resolveSecretValue(account.smtp.password, ctx.secretResolver);
   } catch (err) {
-    logger.error("secret resolution failed", {
+    logger.error("imap secret resolution failed", {
       accountId,
       error: err instanceof Error ? err.message : String(err),
     });
     throw err;
   }
 
-  const smtp = new SmtpSender({
-    accountId,
-    host: account.smtp.host,
-    port: account.smtp.port,
-    secure: account.smtp.secure,
-    user: account.smtp.user,
-    password: smtpPassword,
-    from: account.smtp.from,
-    logger,
-  });
+  let smtp: SmtpSender | null = null;
+  if (!dryRun) {
+    let smtpPassword: string;
+    try {
+      smtpPassword = await resolveSecretValue(account.smtp.password, ctx.secretResolver);
+    } catch (err) {
+      logger.error("smtp secret resolution failed", {
+        accountId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
+    }
+    smtp = new SmtpSender({
+      accountId,
+      host: account.smtp.host,
+      port: account.smtp.port,
+      secure: account.smtp.secure,
+      user: account.smtp.user,
+      password: smtpPassword,
+      from: account.smtp.from,
+      logger,
+    });
+  }
 
   const manager = new InboundAccountManager({ logger });
 
@@ -80,12 +101,33 @@ export async function startEmailAccount(ctx: StartAccountContext): Promise<Accou
           accountId: emittedAccountId,
           mailbox: account.imap.mailbox,
         });
+        if (dryRun) {
+          logger.info("DRY RUN inbound (no dispatch, no send)", {
+            accountId: emittedAccountId,
+            uid: parsed.source.uid,
+            from: parsed.from?.address,
+            to: parsed.to.map((a) => a.address),
+            subject: parsed.subject,
+            messageId: parsed.messageId,
+            inReplyTo: parsed.inReplyTo,
+            references: parsed.references.length,
+            textBytes: parsed.text?.length ?? 0,
+            attachments: parsed.attachments.length,
+          });
+          return;
+        }
         if (!ctx.channelRuntime) {
           logger.info("inbound (no runtime, dropping)", {
             accountId: emittedAccountId,
             from: parsed.from?.address,
             subject: parsed.subject,
             messageId: parsed.messageId,
+          });
+          return;
+        }
+        if (!smtp) {
+          logger.error("internal: smtp sender missing outside dryRun", {
+            accountId: emittedAccountId,
           });
           return;
         }
@@ -130,7 +172,7 @@ export async function startEmailAccount(ctx: StartAccountContext): Promise<Accou
     if (stopped) return;
     stopped = true;
     await manager.stopAll();
-    smtp.close();
+    if (smtp) smtp.close();
     logger.info("account stopped", { accountId });
   };
 
