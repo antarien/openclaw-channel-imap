@@ -1,7 +1,23 @@
+import { startEmailAccount, type AccountHandle } from "./gateway/start-account.js";
+import { resolveEmailAccountFromConfig } from "./gateway/resolve-account.js";
+import type { ResolvedEmailAccount } from "./gateway/resolved-account.js";
+import type { ChannelRuntimeSurface } from "./gateway/inbound-dispatcher.js";
+
 /**
- * Channel plugin definition. Phase 1 scaffolding — adapters implemented in Phase 2+.
- * See ChannelPlugin in openclaw/plugin-sdk/channel-core for full contract.
+ * Minimal shape of the ChannelGatewayContext we actually need. The real type
+ * lives in openclaw/plugin-sdk/src/channels/plugins/types.adapters.d.ts and
+ * includes a lot of fields we don't touch.
  */
+interface GatewayContext {
+  cfg: unknown;
+  accountId: string;
+  account: ResolvedEmailAccount;
+  abortSignal: AbortSignal;
+  channelRuntime?: ChannelRuntimeSurface;
+}
+
+const accountHandles = new Map<string, AccountHandle>();
+
 export const imapPlugin = {
   id: "imap",
   meta: {
@@ -15,8 +31,48 @@ export const imapPlugin = {
     attachments: true,
   },
   config: {
-    resolveAccount: async (): Promise<never> => {
-      throw new Error("imap plugin: resolveAccount not yet implemented (Phase 2)");
+    resolveAccount: (cfg: unknown, accountId?: string): ResolvedEmailAccount => {
+      const id = accountId ?? "default";
+      const raw = readAccountBlob(cfg, id);
+      return resolveEmailAccountFromConfig(id, raw);
+    },
+  },
+  gateway: {
+    startAccount: async (ctx: GatewayContext): Promise<void> => {
+      const existing = accountHandles.get(ctx.accountId);
+      if (existing) {
+        await existing.stop();
+        accountHandles.delete(ctx.accountId);
+      }
+      const handle = await startEmailAccount({
+        cfg: ctx.cfg,
+        accountId: ctx.accountId,
+        account: ctx.account,
+        channelRuntime: ctx.channelRuntime,
+        abortSignal: ctx.abortSignal,
+      });
+      accountHandles.set(ctx.accountId, handle);
+    },
+    stopAccount: async (ctx: GatewayContext): Promise<void> => {
+      const handle = accountHandles.get(ctx.accountId);
+      if (!handle) return;
+      accountHandles.delete(ctx.accountId);
+      await handle.stop();
     },
   },
 } as const;
+
+function readAccountBlob(cfg: unknown, accountId: string): unknown {
+  if (!isRecord(cfg)) return {};
+  const channels = cfg.channels;
+  if (!isRecord(channels)) return {};
+  const imap = channels.imap;
+  if (!isRecord(imap)) return {};
+  const accounts = imap.accounts;
+  if (!isRecord(accounts)) return {};
+  return accounts[accountId] ?? {};
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
