@@ -1,0 +1,76 @@
+{
+  "name": "@antarien/openclaw-channel-imap",
+  "version": "0.1.0-alpha.1",
+  "description": "OpenClaw IMAP/SMTP channel plugin — IDLE-based push, secure by default",
+  "keywords": [
+    "openclaw",
+    "openclaw-plugin",
+    "channel",
+    "imap",
+    "smtp",
+    "email",
+    "mail"
+  ],
+  "homepage": "https://github.com/antarien/openclaw-channel-imap#readme",
+  "bugs": {
+    "url": "https://github.com/antarien/openclaw-channel-imap/issues"
+  },
+  "license": "MIT",
+  "author": {
+    "name": "Antares DEV Group",
+    "url": "https://github.com/antarien"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/antarien/openclaw-channel-imap.git"
+  },
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/",
+    "openclaw.plugin.json",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "dependencies": {
+    "imapflow": "^1.0.171",
+    "mailparser": "^3.7.2",
+    "nodemailer": "^8.0.5"
+  },
+  "devDependencies": {
+    "@types/mailparser": "^3.4.5",
+    "@types/node": "^22.10.0",
+    "@types/nodemailer": "^6.4.17",
+    "openclaw": "^2026.4.15",
+    "typescript": "^5.7.2"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.4.15"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "openclaw": {
+    "extensions": [
+      "./dist/index.js"
+    ],
+    "channel": {
+      "id": "imap",
+      "label": "Email",
+      "selectionLabel": "Email (IMAP + SMTP)",
+      "detailLabel": "IMAP/SMTP",
+      "docsPath": "/channels/imap",
+      "docsLabel": "imap",
+      "blurb": "connect any IMAP/SMTP mailbox — IDLE push, reply threading, pass-friendly secrets.",
+      "systemImage": "envelope",
+      "markdownCapable": false
+    }
+  }
+}

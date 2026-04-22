@@ -1,0 +1,45 @@
+{
+  "id": "imap",
+  "channels": [
+    "imap"
+  ],
+  "channelEnvVars": {
+    "imap": [
+      "IMAP_HOST",
+      "IMAP_PORT",
+      "IMAP_USER",
+      "IMAP_PASSWORD",
+      "SMTP_HOST",
+      "SMTP_PORT",
+      "SMTP_USER",
+      "SMTP_PASSWORD"
+    ]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "imap": {
+        "type": "object",
+        "properties": {
+          "host": { "type": "string" },
+          "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+          "secure": { "type": "boolean" },
+          "mailbox": { "type": "string", "default": "INBOX" },
+          "idleTimeoutSec": { "type": "integer", "default": 1740 }
+        },
+        "required": ["host", "port"]
+      },
+      "smtp": {
+        "type": "object",
+        "properties": {
+          "host": { "type": "string" },
+          "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+          "secure": { "type": "boolean" },
+          "from": { "type": "string" }
+        },
+        "required": ["host", "port", "from"]
+      }
+    }
+  }
+}
