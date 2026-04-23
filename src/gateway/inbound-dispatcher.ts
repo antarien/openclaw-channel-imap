@@ -1,5 +1,6 @@
 import type { InboundMessage } from "../parser/types.js";
 import type { SmtpSender } from "../smtp/smtp-sender.js";
+import type { SentFolderWriter } from "../smtp/sent-folder-writer.js";
 import type { Logger } from "../connection/logger.js";
 import type { ResolvedEmailAccount } from "./resolved-account.js";
 import { sanitizeBody } from "./sanitize-body.js";
@@ -55,6 +56,12 @@ export interface DispatchInboundParams {
   channelRuntime: ChannelRuntimeSurface;
   inbound: InboundMessage;
   smtp: SmtpSender;
+  /**
+   * When present, the outgoing reply is APPENDed into the account's Sent
+   * folder after successful SMTP delivery. Fire-and-forget: append
+   * failures are logged but never fail the dispatch.
+   */
+  sentWriter?: SentFolderWriter | null;
   logger: Logger;
   /** Optional hook to update `lastOutboundAt` after each successful SMTP send. */
   onOutbound?: () => void;
@@ -72,7 +79,7 @@ const CHANNEL_ID = "imap";
  * in the deliver closure so SMTP threading is correct without additional state.
  */
 export async function dispatchInbound(params: DispatchInboundParams): Promise<void> {
-  const { cfg, accountId, channelRuntime, inbound, smtp, logger, onOutbound } = params;
+  const { cfg, accountId, channelRuntime, inbound, smtp, sentWriter, logger, onOutbound } = params;
 
   const headerFrom = inbound.from?.address?.toLowerCase();
   const envelopeFrom = inbound.envelopeFrom;
@@ -179,7 +186,7 @@ export async function dispatchInbound(params: DispatchInboundParams): Promise<vo
           // `to` is hardcoded to envelopeFrom so the agent cannot redirect
           // the reply to an attacker-chosen address via payload fields or
           // via crafted Reply-To / Return-Receipt headers.
-          await smtp.send({
+          const sent = await smtp.send({
             to: envelopeFrom,
             subject: replySubject,
             text,
@@ -187,6 +194,19 @@ export async function dispatchInbound(params: DispatchInboundParams): Promise<vo
             ...(replyReferences.length ? { references: replyReferences } : {}),
           });
           onOutbound?.();
+          // Append the exact bytes we just sent into Sent. Fire-and-forget
+          // so a flaky secondary IMAP session cannot delay the reply path,
+          // but we await the promise inside the closure so the error lands
+          // in the same try/catch for unified logging.
+          if (sentWriter) {
+            sentWriter.append({ raw: sent.raw, flags: ["\\Seen"] }).catch((err) => {
+              logger.warn("sent-folder append raised unexpectedly", {
+                accountId,
+                messageId: sent.messageId,
+                error: err instanceof Error ? err.message : String(err),
+              });
+            });
+          }
         } catch (err) {
           logger.error("smtp deliver failed", {
             accountId,

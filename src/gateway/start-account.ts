@@ -1,6 +1,7 @@
 import { InboundAccountManager } from "../connection/inbound-account-manager.js";
 import { parseFetchedMessage } from "../parser/parse-message.js";
 import { SmtpSender, extractBareAddress } from "../smtp/smtp-sender.js";
+import { SentFolderWriter } from "../smtp/sent-folder-writer.js";
 import type { Logger } from "../connection/logger.js";
 import { consoleLogger } from "../connection/logger.js";
 import type { ResolvedEmailAccount } from "./resolved-account.js";
@@ -32,6 +33,8 @@ export interface StartAccountContext {
   dryRun?: boolean;
   /** Authentication gate + sanitization limits. Defaults fail closed. */
   security?: ResolvedSecurityConfig;
+  /** Override for the Sent-folder IMAP path. Empty/undefined → auto-detect via SPECIAL-USE \Sent. */
+  sentMailbox?: string | undefined;
   /**
    * Gateway-provided runtime-state patcher. When present, connection lifecycle
    * and inbound events are mirrored into the shared account runtime store so
@@ -137,6 +140,7 @@ export async function startEmailAccount(ctx: StartAccountContext): Promise<Accou
   }
 
   let smtp: SmtpSender | null = null;
+  let sentWriter: SentFolderWriter | null = null;
   if (!dryRun) {
     let smtpPassword: string;
     try {
@@ -156,6 +160,19 @@ export async function startEmailAccount(ctx: StartAccountContext): Promise<Accou
       user: account.smtp.user,
       password: smtpPassword,
       from: account.smtp.from,
+      logger,
+    });
+    // The Sent-folder writer uses the IMAP credentials (same mailbox the
+    // IDLE worker watches). It opens a short-lived connection per APPEND
+    // to keep the long-lived IDLE connection unentangled.
+    sentWriter = new SentFolderWriter({
+      accountId,
+      host: account.imap.host,
+      port: account.imap.port,
+      secure: account.imap.secure,
+      user: account.imap.user,
+      password: imapPassword,
+      sentMailbox: ctx.sentMailbox,
       logger,
     });
   }
@@ -276,6 +293,7 @@ export async function startEmailAccount(ctx: StartAccountContext): Promise<Accou
           channelRuntime: ctx.channelRuntime,
           inbound: parsed,
           smtp,
+          sentWriter,
           logger,
           onOutbound: () => setStatus?.({ lastOutboundAt: Date.now() }),
         });

@@ -76,6 +76,7 @@ export const imapPlugin = {
       const secretResolver = buildSecretResolverFromConfig(ctx.cfg);
       const dryRun = readDryRun(ctx.cfg);
       const security = resolveSecurityConfig(readSecurityRaw(ctx.cfg));
+      const sentMailbox = readSentMailbox(ctx.cfg, ctx.accountId);
       const handle = await startEmailAccount({
         cfg: ctx.cfg,
         accountId: ctx.accountId,
@@ -85,6 +86,7 @@ export const imapPlugin = {
         secretResolver,
         dryRun,
         security,
+        sentMailbox,
         ...(ctx.setStatus ? { setStatus: ctx.setStatus } : {}),
       });
       accountHandles.set(ctx.accountId, handle);
@@ -219,6 +221,20 @@ function readSecurityRaw(cfg: unknown): unknown {
   const imap = channels.imap;
   if (!isRecord(imap)) return undefined;
   return imap.security;
+}
+
+function readSentMailbox(cfg: unknown, accountId: string): string | undefined {
+  if (!isRecord(cfg)) return undefined;
+  const channels = cfg.channels;
+  if (!isRecord(channels)) return undefined;
+  const imap = channels.imap;
+  if (!isRecord(imap)) return undefined;
+  const accounts = imap.accounts;
+  if (!isRecord(accounts)) return undefined;
+  const account = accounts[accountId];
+  if (!isRecord(account)) return undefined;
+  const v = account.sentMailbox;
+  return typeof v === "string" && v.length > 0 ? v : undefined;
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {

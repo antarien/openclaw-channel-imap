@@ -228,6 +228,10 @@
                     "from"
                   ],
                   "additionalProperties": false
+                },
+                "sentMailbox": {
+                  "description": "Override for the Sent-folder IMAP path. Empty/absent = auto-detect via SPECIAL-USE \\Sent.",
+                  "type": "string"
                 }
               },
               "required": [

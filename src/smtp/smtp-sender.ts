@@ -1,4 +1,5 @@
 import nodemailer, { type Transporter } from "nodemailer";
+import MailComposer from "nodemailer/lib/mail-composer/index.js";
 import type { Logger } from "../connection/logger.js";
 import { consoleLogger } from "../connection/logger.js";
 
@@ -23,6 +24,12 @@ export interface SendMailParams {
   inReplyTo?: string;
   /** Reference-chain of the thread, without angle brackets. Oldest first. */
   references?: readonly string[];
+}
+
+export interface SendResult {
+  messageId: string;
+  /** Full RFC 5322 MIME bytes of the outgoing mail, suitable for IMAP APPEND. */
+  raw: Buffer;
 }
 
 const SENT_ID_MAX = 256;
@@ -59,7 +66,7 @@ export class SmtpSender {
     await this.transporter.verify();
   }
 
-  async send(params: SendMailParams): Promise<string> {
+  async send(params: SendMailParams): Promise<SendResult> {
     const inReplyTo = params.inReplyTo ? angleWrap(params.inReplyTo) : undefined;
     const references = params.references?.length
       ? params.references.map(angleWrap).join(" ")
@@ -75,7 +82,11 @@ export class SmtpSender {
       throw new Error(`smtp sender: rejected \`to\` containing control chars or list separators`);
     }
 
-    const info = await this.transporter.sendMail({
+    // Build the MIME once so we can send it via SMTP and keep the bytes
+    // for an IMAP APPEND into the Sent folder. Doing this in one pass
+    // guarantees that what Thunderbird reads from Sent is byte-identical
+    // to what the receiver saw — no risk of drift between two composes.
+    const composer = new MailComposer({
       from: this.from,
       to: safeTo,
       subject: safeSubject,
@@ -84,6 +95,17 @@ export class SmtpSender {
       ...(inReplyTo ? { inReplyTo } : {}),
       ...(references ? { references } : {}),
     });
+    const raw = await new Promise<Buffer>((resolve, reject) => {
+      composer.compile().build((err, message) => {
+        if (err) reject(err);
+        else resolve(message);
+      });
+    });
+
+    const info = await this.transporter.sendMail({
+      envelope: { from: this.from, to: safeTo },
+      raw,
+    });
 
     this.rememberSentId(info.messageId);
     this.logger.info("smtp sent", {
@@ -91,7 +113,7 @@ export class SmtpSender {
       to: params.to,
       messageId: info.messageId,
     });
-    return info.messageId;
+    return { messageId: info.messageId, raw };
   }
 
   /**
