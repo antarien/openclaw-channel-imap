@@ -1,0 +1,40 @@
+# /etc/postfix/main.cf — milter chain hardening for openclaw-channel-imap
+#
+# WARNING — SECURITY CRITICAL
+# ============================
+# Do not change `milter_default_action` to anything other than `reject`.
+# Do not remove either milter from `smtpd_milters` / `non_smtpd_milters`.
+# Do not add an alternate delivery path that bypasses these milters.
+#
+# The openclaw-channel-imap plugin's default security config
+# (requireAuthenticationResults: true) drops any message that arrives
+# without an Authentication-Results header. Rspamd adds that header on
+# every milter pass. If the milter chain is bypassed or fails open,
+# the plugin's auth-gate is silently defeated.
+#
+# See docs/mailserver-hardening/README.md in the plugin repo.
+
+# --- DKIM signing (outbound) + Rspamd filtering (inbound) -----------
+# Both directions MUST run both milters. Port 8891 = opendkim,
+# 11332 = rspamd milter.
+smtpd_milters      = inet:127.0.0.1:8891 inet:127.0.0.1:11332
+non_smtpd_milters  = $smtpd_milters
+
+# --- Fail closed --------------------------------------------------
+# If any milter is unreachable, REJECT the mail (SMTP 550) rather than
+# accept-and-deliver unfiltered. The openclaw-channel-imap plugin will
+# *not* detect milter-bypass on its own — this is the only layer that
+# guarantees the Authentication-Results header is present.
+milter_default_action = reject
+
+# --- Milter protocol --------------------------------------------
+# Version 6 is what rspamd/opendkim both speak on current Debian/Arch.
+# Do not downgrade without re-verifying header stamping still works.
+milter_protocol = 6
+milter_mail_macros  = i {mail_addr} {client_addr} {client_name} {auth_authen}
+milter_rcpt_macros  = i {rcpt_addr}
+
+# --- Do NOT add alternate delivery paths ---------------------------
+# If you add virtual_transport / relay_transport / transport_maps
+# entries, verify they go through the same smtpd_milters path. A second
+# LMTP listener on a plain socket is a bypass.

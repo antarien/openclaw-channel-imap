@@ -1,6 +1,6 @@
 {
   "name": "@antarien/openclaw-channel-imap",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "description": "OpenClaw IMAP/SMTP channel plugin — IDLE-based push, secure by default",
   "keywords": [
     "openclaw",

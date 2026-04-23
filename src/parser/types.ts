@@ -1,3 +1,5 @@
+import type { InboundAuthResults } from "./auth-results.js";
+
 export interface InboundAddress {
   name: string;
   address: string;
@@ -48,6 +50,18 @@ export interface InboundMessage {
   text: string | undefined;
   html: string | false;
   attachments: readonly AttachmentMeta[];
+  authResults: InboundAuthResults;
+  /**
+   * RFC 5321 envelope sender, extracted from the `Return-Path:` header that
+   * the receiving MTA (Postfix/Dovecot LMTP) stamped on delivery. This is
+   * the address SPF actually validated, NOT the display-From, NOT Reply-To,
+   * NOT anything the sender directly controls. Use this — never the header
+   * From — as the reply target.
+   *
+   * `undefined` when the receiving MTA did not stamp Return-Path, which
+   * signals a misconfigured delivery pipeline and must be treated as unsafe.
+   */
+  envelopeFrom: string | undefined;
   source: InboundMessageSource;
   getAttachment(index: number): Promise<Buffer>;
 }

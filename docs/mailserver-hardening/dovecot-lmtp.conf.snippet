@@ -1,0 +1,42 @@
+# /etc/dovecot/conf.d/20-lmtp.conf — restrict delivery path
+#
+# WARNING — SECURITY CRITICAL
+# ============================
+# Dovecot LMTP must accept mail ONLY from Postfix local delivery (which
+# has already passed the rspamd/opendkim milter chain). Any other
+# listener — network TCP, an alternate unix socket — is a milter bypass.
+#
+# Do not add a `listen =` with a TCP address. Do not enable
+# `sieve_before` pointing to a script that routes mail around delivery
+# (ditto `sieve_after` that re-fires delivery to a non-milter'd path).
+
+service lmtp {
+  # Unix socket, Postfix-readable only. No TCP listener.
+  unix_listener /var/spool/postfix/private/dovecot-lmtp {
+    group = postfix
+    mode = 0600
+    user = postfix
+  }
+
+  # DO NOT ENABLE:
+  # inet_listener lmtp {
+  #   address = ...
+  #   port = 24
+  # }
+  # A TCP listener would let anything on the local network deliver mail
+  # directly into a user mailbox without passing through Postfix's
+  # milter chain — the Authentication-Results header would be absent
+  # and the plugin's auth-gate would either drop (availability hole)
+  # or, if that knob was ever relaxed, accept attacker-controlled mail.
+}
+
+# Sieve must run AFTER milter stamping — not before.
+# In Dovecot, sieve runs inside LMTP, which in turn only accepts from
+# Postfix, which only delivers post-milter. This ordering is preserved
+# as long as you do not enable alternate LMTP listeners (see above).
+plugin {
+  # `sieve_before` executes site-wide Sieve scripts before the user's
+  # own. That is fine — milter already ran by the time we get here.
+  # But do not set `sieve_before` to a script that calls `redirect` or
+  # `fileinto` into a mailbox that skips the standard delivery path.
+}

@@ -23,6 +23,91 @@
             "description": "Receive IMAP only; skip SMTP transport and reply dispatch",
             "type": "boolean"
           },
+          "security": {
+            "type": "object",
+            "description": "Authentication gate + sanitization limits. All defaults fail closed; relax only with explicit intent.",
+            "properties": {
+              "requireAuthenticationResults": {
+                "default": true,
+                "description": "Drop if the receiving MTA did not add an Authentication-Results: header (DKIM/SPF/DMARC milter not run).",
+                "type": "boolean"
+              },
+              "dropOnDkimFail": {
+                "default": true,
+                "description": "Drop on DKIM=fail. Disable only if you expect legitimate traffic through forwarders that break DKIM signatures.",
+                "type": "boolean"
+              },
+              "dropOnSpfFail": {
+                "default": true,
+                "description": "Drop on SPF=fail (envelope sender not authorized).",
+                "type": "boolean"
+              },
+              "dropOnDmarcFail": {
+                "default": true,
+                "description": "Drop on DMARC=fail. Spoofed sender — no legitimate reason to route to the agent.",
+                "type": "boolean"
+              },
+              "maxBodyChars": {
+                "default": 8000,
+                "description": "Hard cap on body characters sent to the agent. Longer bodies are truncated with a marker.",
+                "type": "integer",
+                "minimum": 1024,
+                "maximum": 1048576
+              },
+              "allowlist": {
+                "description": "Opt-in sender allowlist. When empty/absent, all envelope-from addresses pass the allowlist check; when non-empty, any envelope-from not matching a rule is dropped.",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "from": {
+                      "description": "Exact envelope-from address (case-insensitive).",
+                      "type": "string"
+                    },
+                    "domain": {
+                      "description": "Domain suffix (case-insensitive). Matches envelope-from ending with @<domain> or .<domain>.",
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "rateLimit": {
+                "description": "In-memory rate limits. Reset on restart. Acts as DoS throttle, not audit log.",
+                "type": "object",
+                "properties": {
+                  "disabled": {
+                    "default": false,
+                    "description": "Disable all rate limiting. Use only for tests or dev.",
+                    "type": "boolean"
+                  },
+                  "perAccountPerMinute": {
+                    "default": 10,
+                    "description": "Max dispatches per account per minute.",
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10000
+                  },
+                  "perAccountPerHour": {
+                    "default": 100,
+                    "description": "Max dispatches per account per hour.",
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100000
+                  },
+                  "perSenderPerHour": {
+                    "default": 5,
+                    "description": "Max dispatches per individual envelope-from per hour.",
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10000
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
           "secrets": {
             "type": "object",
             "properties": {

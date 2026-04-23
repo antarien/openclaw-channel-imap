@@ -65,10 +65,20 @@ export class SmtpSender {
       ? params.references.map(angleWrap).join(" ")
       : undefined;
 
+    // Defense-in-depth: strip CR/LF/NUL from Subject and reject `to` values
+    // that contain them. Nodemailer validates envelope addresses, but
+    // Subject is not header-injected in current nodemailer either — we
+    // still strip here so a bug anywhere upstream cannot punch headers in.
+    const safeSubject = sanitizeHeaderValue(params.subject).slice(0, 200);
+    const safeTo = sanitizeHeaderValue(params.to);
+    if (safeTo !== params.to || safeTo.includes(",")) {
+      throw new Error(`smtp sender: rejected \`to\` containing control chars or list separators`);
+    }
+
     const info = await this.transporter.sendMail({
       from: this.from,
-      to: params.to,
-      subject: params.subject,
+      to: safeTo,
+      subject: safeSubject,
       text: params.text,
       ...(params.html !== undefined ? { html: params.html } : {}),
       ...(inReplyTo ? { inReplyTo } : {}),
@@ -122,6 +132,17 @@ export class SmtpSender {
 function angleWrap(id: string): string {
   const s = id.trim();
   return s.startsWith("<") ? s : `<${s}>`;
+}
+
+/**
+ * Strip CR, LF, NUL and other ASCII control chars that could break a header
+ * line. Mail-header-injection (RFC 5322 §2.2) happens via bare CRLF in a
+ * header value; we normalize them to spaces instead of erroring so that
+ * legitimate senders whose subject contains a literal newline don't get
+ * their reply silently dropped.
+ */
+function sanitizeHeaderValue(v: string): string {
+  return v.replace(/[\x00-\x1F\x7F]+/g, " ").replace(/\s+/g, " ").trim();
 }
 
 export function normalizeMessageId(id: string | undefined | null): string {

@@ -7,6 +7,13 @@ import type { ResolvedEmailAccount } from "./resolved-account.js";
 import { dispatchInbound, type ChannelRuntimeSurface } from "./inbound-dispatcher.js";
 import type { MaybeSecret, SecretResolver } from "../secrets/types.js";
 import { isSecretRef } from "../secrets/types.js";
+import {
+  DEFAULT_SECURITY_CONFIG,
+  decideAuthGate,
+  type ResolvedSecurityConfig,
+} from "./security-config.js";
+import { matchesAllowlist } from "./allowlist.js";
+import { RateLimiter } from "./rate-limit.js";
 
 export interface StartAccountContext {
   cfg: unknown;
@@ -23,6 +30,8 @@ export interface StartAccountContext {
    * IMAP + parser + threading path before arming outbound delivery.
    */
   dryRun?: boolean;
+  /** Authentication gate + sanitization limits. Defaults fail closed. */
+  security?: ResolvedSecurityConfig;
   /**
    * Gateway-provided runtime-state patcher. When present, connection lifecycle
    * and inbound events are mirrored into the shared account runtime store so
@@ -97,6 +106,8 @@ export interface AccountHandle {
 export async function startEmailAccount(ctx: StartAccountContext): Promise<AccountHandle> {
   const logger = ctx.logger ?? consoleLogger;
   const { account, accountId } = ctx;
+  const security = ctx.security ?? DEFAULT_SECURITY_CONFIG;
+  const rateLimiter = new RateLimiter(security.rateLimit);
 
   if (!account.enabled || !account.configured) {
     logger.info("account skipped (disabled or not configured)", {
@@ -184,6 +195,48 @@ export async function startEmailAccount(ctx: StartAccountContext): Promise<Accou
             reason: loopCheck.reason,
           });
           return;
+        }
+        const envelopeFromEarly = parsed.envelopeFrom;
+        if (envelopeFromEarly !== undefined) {
+          const allow = matchesAllowlist(envelopeFromEarly, security.allowlist);
+          if (!allow.allowed) {
+            logger.warn("inbound dropped: sender not in allowlist", {
+              accountId: emittedAccountId,
+              uid: parsed.source.uid,
+              messageId: parsed.messageId,
+              envelopeFrom: envelopeFromEarly,
+              headerFrom: parsed.from?.address,
+            });
+            return;
+          }
+        }
+        const gate = decideAuthGate(parsed.authResults, security);
+        if (gate.drop) {
+          logger.warn("inbound dropped: authentication gate", {
+            accountId: emittedAccountId,
+            uid: parsed.source.uid,
+            messageId: parsed.messageId,
+            from: parsed.from?.address,
+            reason: gate.reason,
+            dkim: parsed.authResults.dkim,
+            spf: parsed.authResults.spf,
+            dmarc: parsed.authResults.dmarc,
+            authHeaderPresent: parsed.authResults.raw !== undefined,
+          });
+          return;
+        }
+        if (envelopeFromEarly !== undefined) {
+          const rl = rateLimiter.checkAndConsume(emittedAccountId, envelopeFromEarly);
+          if (!rl.allowed) {
+            logger.warn("inbound dropped: rate limit", {
+              accountId: emittedAccountId,
+              uid: parsed.source.uid,
+              messageId: parsed.messageId,
+              envelopeFrom: envelopeFromEarly,
+              reason: rl.reason,
+            });
+            return;
+          }
         }
         setStatus?.({ lastInboundAt: Date.now() });
         if (dryRun) {

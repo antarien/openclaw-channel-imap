@@ -3,6 +3,7 @@ import { resolveEmailAccountFromConfig } from "./gateway/resolve-account.js";
 import type { ResolvedEmailAccount } from "./gateway/resolved-account.js";
 import type { ChannelRuntimeSurface } from "./gateway/inbound-dispatcher.js";
 import { buildSecretResolverFromConfig } from "./secrets/build-resolver.js";
+import { resolveSecurityConfig } from "./gateway/security-config.js";
 
 /**
  * Minimal shape of the ChannelGatewayContext we actually need. The real type
@@ -74,6 +75,7 @@ export const imapPlugin = {
       }
       const secretResolver = buildSecretResolverFromConfig(ctx.cfg);
       const dryRun = readDryRun(ctx.cfg);
+      const security = resolveSecurityConfig(readSecurityRaw(ctx.cfg));
       const handle = await startEmailAccount({
         cfg: ctx.cfg,
         accountId: ctx.accountId,
@@ -82,6 +84,7 @@ export const imapPlugin = {
         abortSignal: ctx.abortSignal,
         secretResolver,
         dryRun,
+        security,
         ...(ctx.setStatus ? { setStatus: ctx.setStatus } : {}),
       });
       accountHandles.set(ctx.accountId, handle);
@@ -207,6 +210,15 @@ function readDryRun(cfg: unknown): boolean {
   const imap = channels.imap;
   if (!isRecord(imap)) return false;
   return imap.dryRun === true;
+}
+
+function readSecurityRaw(cfg: unknown): unknown {
+  if (!isRecord(cfg)) return undefined;
+  const channels = cfg.channels;
+  if (!isRecord(channels)) return undefined;
+  const imap = channels.imap;
+  if (!isRecord(imap)) return undefined;
+  return imap.security;
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
