@@ -311,6 +311,62 @@
         "accounts.*.smtp.from": {
           "label": "From header",
           "placeholder": "Name <user@example.com>"
+        },
+        "accounts.*.sentMailbox": {
+          "label": "Sent folder override",
+          "help": "Leave empty to auto-detect via SPECIAL-USE \\Sent. Only set if the server does not advertise SPECIAL-USE and the folder is not named Sent/Gesendet/INBOX.Sent.",
+          "placeholder": "Sent",
+          "advanced": true
+        },
+        "security": {
+          "label": "Security"
+        },
+        "security.requireAuthenticationResults": {
+          "label": "Require Authentication-Results header",
+          "help": "Drop mail that arrives without a receiver-stamped Authentication-Results header. Leave ON unless your MTA genuinely does not run a DKIM/SPF/DMARC milter."
+        },
+        "security.dropOnDkimFail": {
+          "label": "Drop on DKIM fail",
+          "help": "Disable only to accept mail from forwarders or mailing lists that routinely break DKIM. Pair with sender allowlist."
+        },
+        "security.dropOnSpfFail": {
+          "label": "Drop on SPF fail",
+          "help": "Envelope sender not authorized to send for its domain."
+        },
+        "security.dropOnDmarcFail": {
+          "label": "Drop on DMARC fail",
+          "help": "DMARC fail means the sender's own published policy says the mail is a spoof. No legitimate reason to route it to the agent."
+        },
+        "security.maxBodyChars": {
+          "label": "Max body chars",
+          "help": "Hard cap on body length sent to the agent. Longer bodies are truncated.",
+          "advanced": true
+        },
+        "security.allowlist": {
+          "label": "Sender allowlist",
+          "help": "Opt-in. When empty, every envelope-from passes. When non-empty, anything not matching an entry is dropped before it reaches the agent.",
+          "advanced": true
+        },
+        "security.rateLimit": {
+          "label": "Rate limit"
+        },
+        "security.rateLimit.disabled": {
+          "label": "Disable rate limiting",
+          "help": "Use only for tests. Leave OFF in production.",
+          "advanced": true
+        },
+        "security.rateLimit.perAccountPerMinute": {
+          "label": "Per-account / minute",
+          "advanced": true
+        },
+        "security.rateLimit.perAccountPerHour": {
+          "label": "Per-account / hour",
+          "advanced": true
+        },
+        "security.rateLimit.perSenderPerHour": {
+          "label": "Per-sender / hour",
+          "help": "Caps how many replies a single envelope-from can trigger per hour. Stops single-sender floods.",
+          "advanced": true
         }
       }
     }
