@@ -6,6 +6,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 project loosely follows [Semantic Versioning](https://semver.org/) within the
 `0.x` line — breaking changes may land in `0.1.0-alpha.N` versions.
 
+## 0.1.0-alpha.7 — 2026-04-27
+
+### Added
+
+- `package.json` `openclaw.compat.pluginApi` and `openclaw.compat.minGatewayVersion`
+  required by the ClawHub registry for code-plugin packages. Pinned to
+  `>=2026.4.15` / `2026.4.15` — the gateway version this release was tested
+  against.
+- `package.json` `openclaw.build` block (`openclawVersion`, `pluginSdkVersion`)
+  for build-provenance metadata.
+
+### Notes
+
+- Functionally identical to `0.1.0-alpha.6` — only manifest metadata for
+  ClawHub listing.
+
 ## 0.1.0-alpha.6 — 2026-04-27
 
 First public alpha release on npm under the `next` dist-tag.
