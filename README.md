@@ -2,18 +2,34 @@
 
 OpenClaw channel plugin for IMAP/SMTP mailboxes — IDLE-based push, reply threading, secure-by-default.
 
-**Status:** alpha. Inbound + outbound flow wired end-to-end and running against a live Dovecot (antarien.com) since 2026-04-22 — operator logs show `[imap] inbound` + `[imap] smtp sent` events with correct reply-threading (e.g. messageId `<d6934d00-adc9-bc8b-83f7-82b5f1dd0982@antarien.com>`). Not yet security-hardened for untrusted inbound (see "Known risks" below); not yet published.
+**Status:** alpha — early-adopter release on the `next` dist-tag. Install with `npm install @antarien/openclaw-channel-imap@next` (`@latest` is not used during the alpha series; `0.1.0` GA will move there). Inbound + outbound flow wired end-to-end and running against a live Dovecot (antarien.com) since 2026-04-22 — operator logs show `[imap] inbound` + `[imap] smtp sent` events with correct reply-threading. Layered security defaults (auth-gate, allowlist, rate-limit, sanitization, secrets resolver) are implemented (see "How this plugin keeps you safe" below). Breaking config changes are possible across `0.1.0-alpha.N` versions.
 
 ## Why this plugin exists
 
-As of 2026-04, there is no trustworthy IMAP/SMTP channel plugin for OpenClaw:
+OpenClaw's docs/channels/ ships 30+ channels (Slack, Telegram, Matrix, Signal, Teams, …) but no built-in IMAP/SMTP channel; previous core attempts were closed without merge (`openclaw/openclaw#3632`, `#22183`, `#32673` — maintainers explicitly prefer plugin over core).
 
-- `openclaw/openclaw#3632` (Email Channel feature request): closed
-- `openclaw/openclaw#22183` (Email channel MVP): closed stale — maintainers explicitly prefer plugin over core
-- `openclaw/openclaw#32673` (IMAP hook via himalaya PR): closed not merged
-- `aibot505/openclaw-email-channel` on npm: single-day drive-by push by a two-month-old anonymous account, 0 stars, 0 forks, `package.json` claims an unrelated party as author. Not audited, not recommended.
+Two third-party email-channel packages exist on npm (both predate this plugin):
 
-This plugin aims to fill that gap with a maintained, auditable, TypeScript-strict implementation.
+- **`@clawemail/email`** (netease/163.com-affiliated, on npm since 2026-03-31, current 0.9.12): IMAP IDLE + SMTP, three reply-streaming modes (`complete`/`accumulated`/`immediate`), Agent-to-Agent (A2A) feature, optional WebSocket transport via `@clawemail/node-sdk`. Default sender allowlist is `["*"]` (pass-all). No DKIM/SPF/DMARC gate, no body sanitization, no rate-limit, no untrusted-input wrapping; passwords sit plaintext in config.
+- **`@nextclaw/channel-plugin-email`** (on npm since 2026-02-19, current 0.2.43): 27-line wrapper around closed-source `@nextclaw/channel-runtime`. Targets the NextClaw fork; security model not auditable from the published artifact.
+
+This plugin's focus is different: **security-by-default for untrusted inbound on a public mailbox.** Compared to the alternatives:
+
+| | this plugin | `@clawemail/email` | `@nextclaw/channel-plugin-email` |
+|---|---|---|---|
+| Auth-gate (DKIM/SPF/DMARC fail-closed) | yes, default-on | no | n/a (closed runtime) |
+| Body sanitization (script/style strip, URL extract) | yes | no | n/a |
+| Untrusted-input wrapper (prompt-injection mitigation) | yes | no | n/a |
+| Rate limit (per-account + per-sender) | yes, default-on | no | n/a |
+| Secrets resolver (`!secret` → `pass`/env) | yes | no — plaintext password in config | n/a |
+| Envelope-from routing (Return-Path enforced) | yes — drop on missing | unspecified | n/a |
+| MTA-side hardening recipe shipped | yes (`docs/mailserver-hardening/`) | no | no |
+| Reply-streaming modes | no — single complete reply | yes | n/a |
+| Agent-to-Agent (A2A) | no | yes | n/a |
+| Auto-derived IMAP/SMTP host from email domain | no | yes | n/a |
+| TypeScript-strict, source auditable | yes | partial (minified `dist/`) | no (runtime closed-source) |
+
+If you need streaming reply modes or A2A and your inbox is on a trusted internal mail relay, `@clawemail/email` is a reasonable choice. If you point an OpenClaw agent at a **public mailbox** that anyone on the internet can write to, the defaults of this plugin are designed for that threat model.
 
 ## Design goals
 
@@ -343,8 +359,8 @@ The plugin's auth-gate only works if the server actually stamps
 - [x] Phase 2.5: Plugin manifest + README aligned with actual config shape
 - [x] Phase 4.1: Secrets resolver (`!secret` → `pass`/`env`) with hardening
 - [x] Phase 4.2: Live test against real Dovecot (antarien.com, 2026-04-22 — inbound IDLE + dispatchInbound + SMTP reply-threading verified in operator logs)
-- [ ] Phase 4.3: Security hardening for untrusted inbound (prompt-injection isolation, sender authenticity, rate limits) — **blocker for publish**
-- [ ] Phase 5: v0.1.0 release + community-plugin PR at `openclaw/openclaw`
+- [x] Phase 4.3: Security hardening for untrusted inbound (untrusted-input wrapper, body sanitization, sender allowlist, rate limits, secret resolver hardening) — landed in commit `6267b6c`
+- [ ] Phase 5: v0.1.0 release on npm + ClawHub submission (community-plugin docs PR at `openclaw/openclaw` is explicitly discouraged by [community.md](https://github.com/openclaw/openclaw/blob/main/docs/plugins/community.md) — ClawHub or npm is the canonical surface)
 
 ## Development
 
