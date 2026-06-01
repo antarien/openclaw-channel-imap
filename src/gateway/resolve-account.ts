@@ -49,11 +49,32 @@ export function resolveEmailAccountFromConfig(
     from: requireString(smtpRaw.from, `smtp.from for account ${accountId}`),
   };
 
+  const postProcessRaw = raw.postProcess;
+  const postProcess = postProcessRaw === undefined
+    ? undefined
+    : resolvePostProcess(postProcessRaw, accountId);
+
   const configured =
     imap.host.length > 0 && imap.user.length > 0 && !isEmptyLiteral(imap.password) &&
     smtp.host.length > 0 && smtp.from.length > 0 && !isEmptyLiteral(smtp.password);
 
-  return { accountId, enabled, configured, imap, smtp };
+  return {
+    accountId,
+    enabled,
+    configured,
+    imap,
+    smtp,
+    ...(postProcess ? { postProcess } : {}),
+  };
+}
+
+function resolvePostProcess(raw: unknown, accountId: string): { markSeen: boolean } {
+  if (!isRecord(raw)) {
+    throw new Error(`imap plugin: postProcess for account ${accountId} must be an object`);
+  }
+  return {
+    markSeen: raw.markSeen === true,
+  };
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {

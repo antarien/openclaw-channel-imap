@@ -18,6 +18,10 @@ export interface ResolvedSmtpConfig {
   from: string;
 }
 
+export interface ResolvedPostProcessConfig {
+  markSeen: boolean;
+}
+
 /**
  * Account shape returned by `config.resolveAccount`.
  * Mirrors the OpenClaw convention: accountId + enabled + configured flags,
@@ -29,4 +33,5 @@ export interface ResolvedEmailAccount {
   configured: boolean;
   imap: ResolvedImapConfig;
   smtp: ResolvedSmtpConfig;
+  postProcess?: ResolvedPostProcessConfig;
 }
