@@ -9,3 +9,6 @@ dist/
 coverage/
 .vscode/
 .idea/
+.gitsecret/
+.openclaw/
+openclaw.json
