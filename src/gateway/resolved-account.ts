@@ -22,6 +22,8 @@ export interface ResolvedPostProcessConfig {
   markSeen: boolean;
 }
 
+export type ReplyFormat = "text" | "markdown" | "html";
+
 /**
  * Account shape returned by `config.resolveAccount`.
  * Mirrors the OpenClaw convention: accountId + enabled + configured flags,
@@ -34,4 +36,13 @@ export interface ResolvedEmailAccount {
   imap: ResolvedImapConfig;
   smtp: ResolvedSmtpConfig;
   postProcess?: ResolvedPostProcessConfig;
+  /**
+   * How the agent's outbound reply is formatted.
+   * - "text": plain text only (text/plain MIME).
+   * - "markdown": agent may use markdown; plugin converts to HTML + plain fallback (multipart/alternative).
+   * - "html": same path as markdown; reserved for future HTML-only mode.
+   * Default: "text".
+   */
+  replyFormat: ReplyFormat;
 }
+

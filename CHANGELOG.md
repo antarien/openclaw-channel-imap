@@ -6,7 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 project loosely follows [Semantic Versioning](https://semver.org/) within the
 `0.x` line — breaking changes may land in `0.1.0-alpha.N` versions.
 
-## 0.1.0-alpha.7 — 2026-04-27
+## 0.1.0-alpha.7 — 2026-06-23
 
 ### Added
 
@@ -16,6 +16,18 @@ project loosely follows [Semantic Versioning](https://semver.org/) within the
   against.
 - `package.json` `openclaw.build` block (`openclawVersion`, `pluginSdkVersion`)
   for build-provenance metadata.
+- **`replyFormat`** per-account config option (`"text"` | `"markdown"` | `"html"`).
+  Controls how the agent's reply is formatted before SMTP delivery.
+  - `"text"` (default) — plain text only, unchanged behavior.
+  - `"markdown"` — agent may use Markdown; plugin converts to HTML via `marked`
+    and sends `multipart/alternative` (text/plain fallback + text/html).
+  - `"html"` — reserved for future direct-HTML mode; currently behaves as
+    `"markdown"`.
+- `capabilities.markdown` set to `true` so the gateway tells the agent Markdown
+  rendering is available.
+- `marked` (^18.0.5) dependency for Markdown-to-HTML conversion.
+- `ReplyFormat` context variable and metadata in the untrusted-input wrapper
+  so the agent sees its output format.
 
 ### Notes
 

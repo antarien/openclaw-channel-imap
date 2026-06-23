@@ -1,4 +1,4 @@
-import type { ResolvedEmailAccount } from "./resolved-account.js";
+import type { ResolvedEmailAccount, ReplyFormat } from "./resolved-account.js";
 import { parseMaybeSecret } from "../secrets/parse.js";
 import { isSecretRef, type MaybeSecret } from "../secrets/types.js";
 
@@ -58,12 +58,15 @@ export function resolveEmailAccountFromConfig(
     imap.host.length > 0 && imap.user.length > 0 && !isEmptyLiteral(imap.password) &&
     smtp.host.length > 0 && smtp.from.length > 0 && !isEmptyLiteral(smtp.password);
 
+  const replyFormat = parseReplyFormat(raw.replyFormat, accountId);
+
   return {
     accountId,
     enabled,
     configured,
     imap,
     smtp,
+    replyFormat,
     ...(postProcess ? { postProcess } : {}),
   };
 }
@@ -75,6 +78,12 @@ function resolvePostProcess(raw: unknown, accountId: string): { markSeen: boolea
   return {
     markSeen: raw.markSeen === true,
   };
+}
+
+function parseReplyFormat(v: unknown, accountId: string): ReplyFormat {
+  if (v === undefined || v === null) return "text";
+  if (v === "text" || v === "markdown" || v === "html") return v;
+  throw new Error(`imap plugin: replyFormat for account ${accountId} must be "text", "markdown", or "html"`);
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {

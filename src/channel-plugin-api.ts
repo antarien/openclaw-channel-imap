@@ -31,7 +31,7 @@ export const imapPlugin = {
     systemImage: "envelope",
   },
   capabilities: {
-    markdown: false,
+    markdown: true,
     threads: true,
     groups: false,
     attachments: true,
