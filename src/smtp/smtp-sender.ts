@@ -1,7 +1,9 @@
 import nodemailer, { type Transporter } from "nodemailer";
 import MailComposer from "nodemailer/lib/mail-composer/index.js";
+import { marked } from "marked";
 import type { Logger } from "../connection/logger.js";
 import { consoleLogger } from "../connection/logger.js";
+import type { ReplyFormat } from "../gateway/resolved-account.js";
 
 export interface SmtpSenderOptions {
   accountId: string;
@@ -20,6 +22,8 @@ export interface SendMailParams {
   subject: string;
   text: string;
   html?: string;
+  /** How to format the reply. Defaults to "text". */
+  format?: ReplyFormat;
   /** Message-ID of the mail we're replying to, without angle brackets. */
   inReplyTo?: string;
   /** Reference-chain of the thread, without angle brackets. Oldest first. */
@@ -82,6 +86,10 @@ export class SmtpSender {
       throw new Error(`smtp sender: rejected \`to\` containing control chars or list separators`);
     }
 
+    // Resolve content format. If html was explicitly provided it takes
+    // precedence over format-based conversion.
+    const { text, html } = await buildMailContent(params.text, params.html, params.format);
+
     // Build the MIME once so we can send it via SMTP and keep the bytes
     // for an IMAP APPEND into the Sent folder. Doing this in one pass
     // guarantees that what Thunderbird reads from Sent is byte-identical
@@ -90,8 +98,8 @@ export class SmtpSender {
       from: this.from,
       to: safeTo,
       subject: safeSubject,
-      text: params.text,
-      ...(params.html !== undefined ? { html: params.html } : {}),
+      text,
+      ...(html !== undefined ? { html } : {}),
       ...(inReplyTo ? { inReplyTo } : {}),
       ...(references ? { references } : {}),
     });
@@ -149,6 +157,33 @@ export class SmtpSender {
       if (at < cutoff) this.sentIds.delete(id);
     }
   }
+}
+
+/**
+ * Prepare text + html content from the agent's response based on format.
+ *
+ * - "text": plain text only, no html.
+ * - "markdown": agent text is markdown; convert to HTML, keep original text
+ *   as plain fallback so mail renders well in any MUA.
+ * - "html": same as markdown for now; reserved for future direct HTML mode.
+ */
+async function buildMailContent(
+  text: string,
+  explicitHtml: string | undefined,
+  format: ReplyFormat | undefined,
+): Promise<{ text: string; html: string | undefined }> {
+  // Explicit html always wins — caller knows best.
+  if (explicitHtml !== undefined) {
+    return { text, html: explicitHtml };
+  }
+
+  if (format === "markdown" || format === "html") {
+    const html = await marked.parse(text, { async: true });
+    return { text, html };
+  }
+
+  // format === "text" (default) — plain text only
+  return { text, html: undefined };
 }
 
 function angleWrap(id: string): string {

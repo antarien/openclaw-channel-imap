@@ -232,6 +232,24 @@
                 "sentMailbox": {
                   "description": "Override for the Sent-folder IMAP path. Empty/absent = auto-detect via SPECIAL-USE \\Sent.",
                   "type": "string"
+                },
+                "replyFormat": {
+                  "default": "text",
+                  "description": "Format of the agent's outbound reply. \"text\" = plain text only; \"markdown\" = markdown converted to HTML; \"html\" = reserved for future use.",
+                  "type": "string",
+                  "enum": ["text", "markdown", "html"]
+                },
+                "postProcess": {
+                  "type": "object",
+                  "description": "Optional post-dispatch handling for successfully processed inbound mail.",
+                  "properties": {
+                    "markSeen": {
+                      "default": false,
+                      "description": "Mark the original inbound message as \\Seen after dispatchInbound(...) succeeds.",
+                      "type": "boolean"
+                    }
+                  },
+                  "additionalProperties": false
                 }
               },
               "required": [
@@ -316,6 +334,19 @@
           "label": "Sent folder override",
           "help": "Leave empty to auto-detect via SPECIAL-USE \\Sent. Only set if the server does not advertise SPECIAL-USE and the folder is not named Sent/Gesendet/INBOX.Sent.",
           "placeholder": "Sent",
+          "advanced": true
+        },
+        "accounts.*.replyFormat": {
+          "label": "Reply format",
+          "help": "How the agent's response is formatted before sending. 'text' = plain text email; 'markdown' = agent uses markdown, plugin converts to HTML+text; 'html' = reserved for future direct HTML support."
+        },
+        "accounts.*.postProcess": {
+          "label": "Inbound post-processing",
+          "advanced": true
+        },
+        "accounts.*.postProcess.markSeen": {
+          "label": "Mark processed mail as seen",
+          "help": "After dispatchInbound(...) succeeds, open the source mailbox with a short-lived IMAP connection and set \\Seen on the original message.",
           "advanced": true
         },
         "security": {

@@ -111,9 +111,33 @@ channels:
           user: amilo@example.com
           password: "!secret smtp/amilo"
           from: "Amilo <amilo@example.com>"
+        replyFormat: markdown    # "text" (default) | "markdown" | "html"
 ```
 
 Multi-account is first-class: add another key under `accounts:` and the plugin spins up an independent IDLE worker + SMTP transport for it.
+
+### Reply format (`replyFormat`)
+
+Controls how the agent's outbound reply is formatted before SMTP delivery:
+
+- **`"text"` (default)** — plain text only (`text/plain` MIME). The channel
+  declares `markdown: false` semantics; the agent is instructed to use plain text.
+- **`"markdown"`** — the agent may use Markdown formatting. The plugin converts
+  it to HTML via `marked` and sends a `multipart/alternative` message
+  with a `text/plain` fallback (the original Markdown) + `text/html`.
+  Recipients with HTML-capable mail clients see formatted text; plain-text
+  readers get the Markdown source.
+- **`"html"`** — reserved for future direct-HTML mode. Currently behaves
+  identically to `"markdown"`; the pipeline is ready for a dedicated rendering path.
+
+The `ReplyFormat` is injected into the agent's message context (as a context
+variable and in the metadata block of the untrusted-input wrapper) so the
+agent can adapt its output style.
+
+> **Note:** Even with `markdown: true` set at the channel-capability level, an
+> LLM may still emit Markdown syntax unprompted. Setting `replyFormat: markdown`
+> ensures those Markdown constructs are properly rendered into HTML rather than
+> appearing as raw `**asterisks**` in plain-text email.
 
 ### Secrets
 

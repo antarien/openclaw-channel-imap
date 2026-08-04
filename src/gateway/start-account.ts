@@ -15,6 +15,7 @@ import {
 } from "./security-config.js";
 import { matchesAllowlist } from "./allowlist.js";
 import { RateLimiter } from "./rate-limit.js";
+import { InboundPostProcessor } from "../connection/inbound-post-processor.js";
 
 export interface StartAccountContext {
   cfg: unknown;
@@ -141,6 +142,24 @@ export async function startEmailAccount(ctx: StartAccountContext): Promise<Accou
 
   let smtp: SmtpSender | null = null;
   let sentWriter: SentFolderWriter | null = null;
+  const postProcessor = new InboundPostProcessor({
+    accountId,
+    host: account.imap.host,
+    port: account.imap.port,
+    secure: account.imap.secure,
+    user: account.imap.user,
+    password: imapPassword,
+    ...(account.postProcess ? { postProcess: account.postProcess } : {}),
+    logger,
+  });
+
+  if (postProcessor.isEnabled()) {
+    logger.info("inbound post-process enabled", {
+      accountId,
+      markSeen: account.postProcess?.markSeen === true,
+    });
+  }
+
   if (!dryRun) {
     let smtpPassword: string;
     try {
@@ -296,6 +315,11 @@ export async function startEmailAccount(ctx: StartAccountContext): Promise<Accou
           sentWriter,
           logger,
           onOutbound: () => setStatus?.({ lastOutboundAt: Date.now() }),
+        });
+        await postProcessor.process({
+          mailbox: parsed.source.mailbox,
+          uid: parsed.source.uid,
+          ...(parsed.messageId ? { messageId: parsed.messageId } : {}),
         });
       } catch (err) {
         logger.error("inbound dispatch failed", {
